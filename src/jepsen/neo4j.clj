@@ -7,59 +7,39 @@
                     [tests :as tests]]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]))
-            
+
 (def dir     "/opt/neo4j")
 (def binary  (str dir "/bin/neo4j"))
+(def admin  (str dir "/bin/neo4j-admin"))
+(def cypher-shell  (str dir "/bin/cypher-shell"))
+(def conf  (str dir "/conf/neo4j.conf"))
 (def logfile (str dir "/neo4j.log"))
 (def pidfile (str dir "/neo4j.pid"))
 
-(defn node-url
-  "An HTTP url for connecting to a node on a particular port."
-  [node port]
-  (str "http://" node ":" port))
+(defn uncomment-conf-prop
+  [property]
+  (c/exec :sed :-i "'s/#" property "/" property "/'" conf))
 
-(defn peer-url
-  "The HTTP url for other peers to talk to a node."
-  [node]
-  (node-url node 2380))
-
-(defn client-url
-  "The HTTP url clients use to talk to a node."
-  [node]
-  (node-url node 2379))
-
-(defn initial-cluster
-  "Constructs an initial cluster string for a test, like
-  \"foo=foo:2380,bar=bar:2380,...\""
-  [test]
-  (->> (:nodes test)
-       (map (fn [node]
-              (str node "=" (peer-url node))))
-       (str/join ",")))
-            
 (defn db
   "Neo4i DB for a particular version."
   [version]
   (reify db/DB
     (setup! [_ test node]
-      (info node "installing neo4j" version)
       (c/su
+        (info node "installing jdk and jre")
+        (c/exec :apt :install :-y "default-jre")
+        (c/exec :apt :install :-y "default-jdk")
+        (info node "installing neo4j" version)
         (let [url (str "https://dl.dropboxusercontent.com/s/4ta0bluariw1z2k/neo4j-enterprise-" version "-unix.tar.gz")]
           (cu/install-archive! url dir))
-
+        (let [auth-disable-property "dbms.security.auth_enabled=false"]
+          (uncomment-conf-prop auth-disable-property))
         (cu/start-daemon!
           {:logfile logfile
            :pidfile pidfile
            :chdir   dir}
           binary
-          :--log-output :stderr
-          :--name (name node)
-          :--listen-peer-urls (peer-url node)
-          :--listen-client-urls (client-url node)
-          :--advertise-client-urls (client-url node)
-          :--initial-cluster-state :new
-          :--initial-advertise-peer-urls (peer-url node)
-          :--initial-cluster (initial-cluster test))
+          :start)
 
         (Thread/sleep 10000)))
 
@@ -71,7 +51,7 @@
     db/LogFiles
     (log-files [_ test node]
       [logfile])))
-         
+
 (defn neo4j-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency ...), constructs a test map."
