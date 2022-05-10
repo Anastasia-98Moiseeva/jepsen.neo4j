@@ -44,7 +44,7 @@
     (setup! [_ test node]
       (info node "installing neo4j" version)
       (c/su
-        (let [url (str "https://dl.dropboxusercontent.com/s/jnw606op0lzk3hq/neo4j-community-" version "-unix.tar.gz")]
+        (let [url (str "https://dl.dropboxusercontent.com/s/4ta0bluariw1z2k/neo4j-enterprise-" version "-unix.tar.gz")]
           (cu/install-archive! url dir))
 
         (cu/start-daemon!
@@ -66,8 +66,7 @@
     (teardown! [_ test node]
       (info node "tearing down neo4j")
       (cu/stop-daemon! binary pidfile)
-      (c/su (c/exec :rm :-rf dir))
-      )
+      (c/su (c/exec :rm :-rf dir)))
 
     db/LogFiles
     (log-files [_ test node]
@@ -91,3 +90,4 @@
   (cli/run! (merge (cli/single-test-cmd {:test-fn neo4j-test})
                    (cli/serve-cmd))
             args))
+
