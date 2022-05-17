@@ -1,13 +1,16 @@
 (ns jepsen.neo4j
   (:require [clojure.tools.logging :refer :all]
             [jepsen [cli :as cli]
+             [checker :as checker]
              [control :as c]
              [db :as db]
              [generator :as gen]
              [tests :as tests]]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [jepsen.neoclient])
+            [knossos.model :as model]
+            [jepsen.neoclient]
+            [jepsen.checker.timeline :as timeline])
   (:import (jepsen.neoclient Client)))
 
 (def dir "/opt/neo4j")
@@ -54,8 +57,14 @@
           :db              (db "4.2.16")
           :pure-generators true
           :client          (Client. nil)
+          :checker         (checker/compose
+                             {:linear   (checker/linearizable
+                                          {:model     (model/register)
+                                           :algorithm :linear})
+                              :timeline (timeline/html)})
           :generator       (->> (gen/mix [r w])
                                 (gen/stagger 1/50)
+                                (gen/nemesis nil)
                                 (gen/time-limit (:time-limit opts)))}))
 
 (defn -main
