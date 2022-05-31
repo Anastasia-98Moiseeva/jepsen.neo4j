@@ -10,16 +10,15 @@
             [jepsen.os.debian :as debian]
             [knossos.model :as model]
             [jepsen.linearizability :as lin]
-            [jepsen.checker.timeline :as timeline])
-  (:import (jepsen.linearizability Client)))
+            [jepsen.set :as set]
+            [jepsen.append :as app]
+            [jepsen.checker.timeline :as timeline]))
 
 (def dir "/opt/neo4j")
 (def binary (str dir "/bin/neo4j"))
 (def conf (str dir "/conf/neo4j.conf"))
 (def logfile (str dir "logs/neo4j.log"))
 
-(defn r [_ _] {:type :invoke, :f :read, :value nil})
-(defn w [_ _] {:type :invoke, :f :write, :value (rand-int 10)})
 
 (defn db
   "Neo4i DB for a particular version."
@@ -48,7 +47,9 @@
 (def workloads
   "A map of workload names to functions that can take opts and construct
   workloads."
-  {:linear lin/workload})
+  {:linear lin/workload
+   :set    set/workload
+   :append app/workload})
 
 (def cli-opts
   "Additional command line options."
@@ -62,9 +63,17 @@
   :concurrency ...), constructs a test map."
   [opts]
   (let [workload ((get workloads (:workload opts)) opts)
-        gen (->> (:generator workload))]
+        gen (->> (:generator workload)
+                 (gen/nemesis nil)
+                 (gen/time-limit (:time-limit opts)))
+        gen (if (:final-generator workload)
+              (gen/phases gen
+                          (gen/clients (:final-generator workload)))
+              gen)]
+
     (merge tests/noop-test
            opts
+           (dissoc workload :final-generator)
            {:name            "neo4j"
             :os              debian/os
             :db              (db "4.2.16")
