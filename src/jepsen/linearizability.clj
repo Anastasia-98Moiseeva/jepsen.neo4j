@@ -9,7 +9,7 @@
 (defrecord Client [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (nc/connect (str "neo4j://192.168.1.140:7687") "neo4j" "pas")))
+    (assoc this :conn (nc/connect (str "neo4j://192.168.0.101:7687") "neo4j" "pas")))
 
   (setup! [this test]
     (info (nc/create-node! conn {:ref-id "p"

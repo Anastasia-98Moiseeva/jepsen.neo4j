@@ -3,7 +3,6 @@
             [jepsen [client :as client]
              [checker :as checker]
              [generator :as gen]]
-    ;[knossos.model :as model]
             [jepsen.tests.cycle.append :as append]
             [clojure.tools.logging :refer :all]
             [clojure.set :as set]))
@@ -13,41 +12,40 @@
   [conn test transaction [f k v :as mop]]
   (info :mop mop)
   (case f
-    :r (get-in (nc/find-node transaction {:ref-id "n"
-                                          :id     k
-                                          :props  {:name "Alice"}}) [:props :rating])
-    ; (get-in (nc/find-node transaction {:ref-id "n" :id     1 :labels [:person]}) [:props :rating])
-    :append (let [items (get-in (nc/find-node transaction {:ref-id "n"
-                                                           :id     k
-                                                           :props  {:name "Alice"}}) [:props :rating])]
-              (info "iiiiiiiiii" (vec items))
-              (nc/update-props! transaction {:id k :props {:name "Alice"}} {:rating (vec (conj (vec items) (str v)))}))
-    ;(do (nc/update-props! transaction {:id     1 :labels [:person]} {:rating v}))
+    :r (vec (get-in (nc/find-node transaction {:ref-id "n"
+                                               :labels [:person]
+                                               :props  {:name k}}) [:props :rating]))
+    :append (let [node (nc/find-node transaction {:ref-id "p"
+                                                  :labels [:person]
+                                                  :props  {:name k}})
+                  items (vec (get-in node [:props :rating]))]
+
+              (info "append operation: " (if (= node nil)
+                             (nc/create-node! transaction {:labels [:person] :props {:name k :rating (vec (conj [] v))}})
+                             (nc/update-props! transaction {:ref-id "z"
+                                                            :labels [:person]
+                                                            :props  {:name k}} {:rating (vec (conj items v))}
+                                               )))
+              )
     ))
 
 (defrecord Client [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (nc/connect (str "neo4j://192.168.1.140:7687") "neo4j" "pas")))
+    (assoc this :conn (nc/connect (str "neo4j://192.168.0.101:7687") "neo4j" "pas")))
 
-  (setup! [this test]
-    (info (nc/create-node! conn {:ref-id "p"
-                                 :labels [:person]
-                                 :props  {:name "Alice"}}))
-    ;(info (nc/create-node! conn {:ref-id "p" :id     1 :labels [:person]}))
-    )
+  (setup! [this test])
 
   (invoke! [_ test op]
-    (info "tttttttttttt" op)
     (let [txn (:value op)
           txn' (nc/with-transaction conn tx
-                                    (mapv (partial mop! conn test tx) txn))
-          val (:value op)]
-      (info "rrrrreeeeeessssss" (assoc op :type :ok, :value (vec (for [i (range 0 (count val))] (if (= (get (get val i) 0) :r) (assoc (get val i) 2 (get txn' i)) (get val i))))))
-      (assoc op :type :ok, :value (vec (for [i (range 0 (count val))]
-                                         (if (= (get (get val i) 0) :r)
-                                           (assoc (get val i) 2 (get txn' i))
-                                           (get val i))))))
+                                    (mapv (partial mop! conn test tx) txn))]
+      (info "txn': " txn')
+      (info "txn: " txn)
+      (assoc op :type :ok, :value (vec (for [i (range 0 (count txn))]
+                                         (if (= (get (get txn i) 0) :r)
+                                           (assoc (get txn i) 2 (get txn' i))
+                                           (get txn i))))))
     )
 
   (teardown! [this test])
@@ -59,7 +57,7 @@
 (defn workload
   "Stuff you need to build a test!"
   [opts]
-  (-> (append/test {:key-count          7
+  (-> (append/test {:key-count          3
                     :max-txn-length     3
                     :max-writes-per-key 3
                     :anomalies          [:G0, :G1a, :G1b, :G1c, :G1 :G2]})
