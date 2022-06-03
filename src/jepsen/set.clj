@@ -3,15 +3,13 @@
             [jepsen [client :as client]
              [checker :as checker]
              [generator :as gen]]
-    ;[knossos.model :as model]
-            [clojure.tools.logging :refer :all]
-            [clojure.set :as set]))
+            [clojure.tools.logging :refer :all]))
 
 
 (defrecord Client [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (nc/connect (str "neo4j://192.168.0.101:7687") "neo4j" "pas")))
+    (assoc this :conn (nc/connect (str "neo4j://" node ":7687") "neo4j" "pas")))
 
   (setup! [this test])
 

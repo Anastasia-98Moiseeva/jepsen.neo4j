@@ -1,5 +1,6 @@
 (ns jepsen.neo4j
   (:require [clojure.tools.logging :refer :all]
+            [clojure.string :as str]
             [jepsen [cli :as cli]
              [checker :as checker]
              [control :as c]
@@ -8,17 +9,26 @@
              [tests :as tests]]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [knossos.model :as model]
             [jepsen.linearizability :as lin]
             [jepsen.set :as set]
             [jepsen.append :as app]
-            [jepsen.checker.timeline :as timeline]))
+            ))
 
 (def dir "/opt/neo4j")
 (def binary (str dir "/bin/neo4j"))
 (def conf (str dir "/conf/neo4j.conf"))
 (def logfile (str dir "logs/neo4j.log"))
 
+(defn node-ip-port
+  [node]
+  (str node ":5000"))
+
+(defn initial-discovery-members
+  [test]
+  (->> (:nodes test)
+       (map (fn [node]
+              (node-ip-port node)))
+       (str/join ",")))
 
 (defn db
   "Neo4i DB for a particular version."
@@ -27,10 +37,18 @@
     (setup! [_ test node]
       (info node "installing neo4j" version)
       (c/su
-        (let [url (str "https://dl.dropboxusercontent.com/s/p0uoprfma140p4c/neo4j-community-" version "-unix.tar.gz")]
+        (let [url (str "https://dl.dropboxusercontent.com/s/4ta0bluariw1z2k/neo4j-enterprise-" version "-unix.tar.gz")]
           (cu/install-archive! url dir))
+        (c/exec* (str "cd " dir " && sed -i 's/#dbms.mode/dbms.mode/g' " conf))
         (c/exec* (str "cd " dir " && sed -i 's/#dbms.default_listen_address/dbms.default_listen_address/g' " conf))
+        (c/exec* (str "cd " dir " && sed -i 's/#causal_clustering.initial_discovery_members=localhost:5000,localhost:5001,localhost:5002/causal_clustering.initial_discovery_members=" (initial-discovery-members test) "/g' " conf))
+        (c/exec* (str "cd " dir " && sed -i 's/#dbms.default_advertised_address=localhost/dbms.default_advertised_address=" node "/g' " conf))
+
         (c/exec* (str "cd " dir " && sed -i 's/#dbms.security.auth_enabled=false/dbms.security.auth_enabled=false/g' " conf))
+
+        (c/exec* (str "cd " dir " && sed -i 's/#dbms.routing.enabled=false/dbms.routing.enabled=true/g' " conf))
+        (c/exec* (str "cd " dir " && sed -i 's/#dbms.routing.listen_address/dbms.routing.listen_address/g' " conf))
+        (c/exec* (str "cd " dir " && sed -i 's/#dbms.routing.advertised_address=:7688/dbms.routing.advertised_address=" node ":7688/g' " conf))
         (info (c/exec binary "start")))
       (Thread/sleep 50000))
 
@@ -56,13 +74,14 @@
   [["-w" "--workload NAME" "Test workload to run"
     :default :linear
     :parse-fn keyword
-    :validate [workloads (cli/one-of workloads)]]])
+    :validate [workloads (cli/one-of workloads)]]]
+  )
 
 (defn neo4j-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency ...), constructs a test map."
   [opts]
-  (let [workload ((get workloads (:workload opts)) opts)
+  (let [workload ((workloads (:workload opts)) opts)
         gen (->> (:generator workload)
                  (gen/nemesis nil)
                  (gen/time-limit (:time-limit opts)))
@@ -80,8 +99,10 @@
             :pure-generators true
             :client          (:client workload)
             :checker         (checker/compose
-                               {:workload (:checker workload)
-                                :timeline (timeline/html)})
+                               {:clock      (checker/clock-plot)
+                                :stats      (checker/stats)
+                                :exceptions (checker/unhandled-exceptions)
+                                :workload   (:checker workload)})
             :generator       gen})))
 
 (defn -main

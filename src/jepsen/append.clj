@@ -1,11 +1,8 @@
 (ns jepsen.append
   (:require [neo4clj.client :as nc]
-            [jepsen [client :as client]
-             [checker :as checker]
-             [generator :as gen]]
+            [jepsen [client :as client]]
             [jepsen.tests.cycle.append :as append]
-            [clojure.tools.logging :refer :all]
-            [clojure.set :as set]))
+            [clojure.tools.logging :refer :all]))
 
 (defn mop!
   "Executes a transactional micro-op on a connection."
@@ -32,7 +29,7 @@
 (defrecord Client [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (nc/connect (str "neo4j://192.168.0.101:7687") "neo4j" "pas")))
+    (assoc this :conn (nc/connect (str "neo4j://" node ":7687") "neo4j" "pas")))
 
   (setup! [this test])
 
@@ -60,6 +57,6 @@
   (-> (append/test {:key-count          3
                     :max-txn-length     3
                     :max-writes-per-key 3
-                    :anomalies          [:G0, :G1a, :G1b, :G1c, :G1 :G2]})
+                    })
       (assoc :client (Client. nil))
       ))
