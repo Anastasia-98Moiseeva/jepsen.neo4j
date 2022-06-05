@@ -1,4 +1,4 @@
-(ns jepsen.set
+(ns jepsen.neo4j.set
   (:require [neo4clj.client :as nc]
             [jepsen [client :as client]
              [checker :as checker]
@@ -31,9 +31,6 @@
 
   (close! [_ test]
     (nc/disconnect conn)))
-
-(defn r [_ _] {:type :invoke, :f :read, :value nil})
-(defn a [_ _] {:type :invoke, :f :add, :value (rand-int 10)})
 
 (defn workload
   "Stuff you need to build a test!"

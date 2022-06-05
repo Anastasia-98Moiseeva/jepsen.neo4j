@@ -1,4 +1,4 @@
-(ns jepsen.linearizability
+(ns jepsen.neo4j.linearizability
   (:require [neo4clj.client :as nc]
             [jepsen [client :as client]
              [checker :as checker]

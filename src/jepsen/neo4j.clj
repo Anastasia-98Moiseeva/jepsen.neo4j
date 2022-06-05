@@ -9,10 +9,10 @@
              [tests :as tests]]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [jepsen.linearizability :as lin]
-            [jepsen.set :as set]
-            [jepsen.append :as app]
-            ))
+            [jepsen.neo4j [linearizability :as lin]
+             [set :as set]
+             [append :as app]
+             [nemesis :as nemesis]]))
 
 (def dir "/opt/neo4j")
 (def binary (str dir "/bin/neo4j"))
@@ -62,6 +62,19 @@
     (log-files [_ test node]
       [logfile])))
 
+(def special-nemeses
+  "A map of special nemesis names to collections of faults"
+  {:none []
+   :all  [:pause :kill :partition :clock :member]})
+
+(defn parse-nemesis-spec
+  "Takes a comma-separated nemesis string and returns a collection of keyword
+  faults."
+  [spec]
+  (->> (str/split spec #",")
+       (map keyword)
+       (mapcat #(get special-nemeses % [%]))))
+
 (def workloads
   "A map of workload names to functions that can take opts and construct
   workloads."
@@ -74,7 +87,17 @@
   [["-w" "--workload NAME" "Test workload to run"
     :default :linear
     :parse-fn keyword
-    :validate [workloads (cli/one-of workloads)]]]
+    :validate [workloads (cli/one-of workloads)]]
+
+   [nil "--nemesis FAULTS" "A comma-separated list of nemesis faults to enable"
+    :parse-fn parse-nemesis-spec
+    :validate [(partial every? #{:pause :kill :partition :clock :member})
+               "Faults must be pause, kill, partition, clock, or member, or the special faults all or none."]]
+
+   [nil "--nemesis-interval SECS" "Roughly how long between nemesis operations."
+    :default 2
+    :parse-fn read-string
+    :validate [pos? "Must be a positive integer."]]]
   )
 
 (defn neo4j-test
@@ -82,8 +105,16 @@
   :concurrency ...), constructs a test map."
   [opts]
   (let [workload ((workloads (:workload opts)) opts)
+        nemesis (nemesis/nemesis-package
+                  {:db       db
+                   :nodes    (:nodes opts)
+                   :faults   (:nemesis opts)
+                   :partition {:targets [:primaries]}
+                   :pause    {:targets [nil :one :primaries :majority :all]}
+                   :kill     {:targets [nil :one :primaries :majority :all]}
+                   :interval (:nemesis-interval opts)})
         gen (->> (:generator workload)
-                 (gen/nemesis nil)
+                 (gen/nemesis (:generator nemesis))
                  (gen/time-limit (:time-limit opts)))
         gen (if (:final-generator workload)
               (gen/phases gen
@@ -97,12 +128,15 @@
             :os              debian/os
             :db              (db "4.2.16")
             :pure-generators true
-            :client          (:client workload)
             :checker         (checker/compose
-                               {:clock      (checker/clock-plot)
+                               {:perf       (checker/perf
+                                              {:nemeses (:perf nemesis)})
+                                :clock      (checker/clock-plot)
                                 :stats      (checker/stats)
                                 :exceptions (checker/unhandled-exceptions)
                                 :workload   (:checker workload)})
+            :client          (:client workload)
+            :nemesis         (:nemesis nemesis)
             :generator       gen})))
 
 (defn -main

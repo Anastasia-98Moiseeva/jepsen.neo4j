@@ -1,4 +1,4 @@
-(ns jepsen.append
+(ns jepsen.neo4j.append
   (:require [neo4clj.client :as nc]
             [jepsen [client :as client]]
             [jepsen.tests.cycle.append :as append]
